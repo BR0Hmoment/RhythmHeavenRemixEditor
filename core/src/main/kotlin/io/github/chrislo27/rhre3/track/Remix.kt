@@ -208,7 +208,7 @@ open class Remix(val main: RHRE3Application)
                     val timeSigs = tree.get("timeSignatures") as ArrayNode
                     timeSigs.filterIsInstance<ObjectNode>().forEach {
                         remix.timeSignatures.add(
-                                TimeSignature(remix.timeSignatures, it["beat"].asDouble().toFloat(), it["divisions"].asInt(4), it["beatUnit"]?.asInt(TimeSignature.DEFAULT_NOTE_UNIT) ?: TimeSignature.DEFAULT_NOTE_UNIT))
+                                TimeSignature(remix.timeSignatures, it["beat"].asDouble().toFloat(), it["divisions"].asInt(4), it["beatUnit"]?.asInt(4) ?: 4))
                     }
                 }
             }
@@ -331,7 +331,7 @@ open class Remix(val main: RHRE3Application)
             }
 
             // add end entity either 2 beats after furthest point, or on the next measure border
-            remix.entities += GameRegistry.data.objectMap[GameRegistry.END_REMIX_ENTITY_ID]!!.createEntity(remix, null).apply {
+            remix.entities += GameRegistry.data.endRemix.createEntity(remix, null).apply {
                 updateBounds {
                     val furthest = (remix.entities.maxBy { it.bounds.maxX }?.run { bounds.maxX }?.roundToInt()
                             ?: 0).toFloat()
@@ -879,9 +879,9 @@ open class Remix(val main: RHRE3Application)
                 val beadsMusic: BeadsMusic? = music.music as? BeadsMusic
                 if (beadsMusic != null) {
                     val inDistortion = entities.any { it is MusicDistortEntity && beat in it.bounds.x..it.bounds.maxX }
-                    val currentlyDistorted = beadsMusic.player.doDistortion
+                    val currentlyDistorted = beadsMusic.player.doBandpass
                     if (inDistortion != currentlyDistorted) {
-                        beadsMusic.player.doDistortion = inDistortion
+                        beadsMusic.player.doBandpass = inDistortion
                     }
                 }
             }
@@ -909,9 +909,7 @@ open class Remix(val main: RHRE3Application)
         }
 
         if (playState != PlayState.STOPPED
-                && (beat >= duration
-                        || main.preferences.getBoolean(PreferenceKeys.SETTINGS_REMIX_ENDS_AT_LAST, false)
-                        && beat >= lastPoint)) {
+                && (beat >= duration || (main.preferences.getBoolean(PreferenceKeys.SETTINGS_REMIX_ENDS_AT_LAST, false) && beat >= lastPoint))) {
             playState = PlayState.STOPPED
         }
     }

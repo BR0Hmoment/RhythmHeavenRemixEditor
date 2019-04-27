@@ -14,8 +14,7 @@ import com.badlogic.gdx.math.Vector2
 import com.badlogic.gdx.utils.Align
 import com.badlogic.gdx.utils.Disposable
 import com.badlogic.gdx.utils.SharedLibraryLoader
-import com.fasterxml.jackson.databind.node.ArrayNode
-import com.fasterxml.jackson.databind.node.ObjectNode
+import com.fasterxml.jackson.core.JsonParseException
 import io.github.chrislo27.rhre3.PreferenceKeys
 import io.github.chrislo27.rhre3.RHRE3
 import io.github.chrislo27.rhre3.RHRE3Application
@@ -43,7 +42,9 @@ import io.github.chrislo27.rhre3.entity.model.special.TextureEntity
 import io.github.chrislo27.rhre3.midi.MidiHandler
 import io.github.chrislo27.rhre3.modding.ModdingUtils
 import io.github.chrislo27.rhre3.oopsies.ActionGroup
+import io.github.chrislo27.rhre3.patternstorage.ClipboardStoredPattern
 import io.github.chrislo27.rhre3.patternstorage.StoredPattern
+import io.github.chrislo27.rhre3.patternstorage.toEntityList
 import io.github.chrislo27.rhre3.playalong.Playalong
 import io.github.chrislo27.rhre3.registry.Game
 import io.github.chrislo27.rhre3.registry.GameGroup
@@ -70,7 +71,10 @@ import io.github.chrislo27.rhre3.track.tracker.TrackerAction
 import io.github.chrislo27.rhre3.track.tracker.TrackerValueChange
 import io.github.chrislo27.rhre3.track.tracker.musicvolume.MusicVolumeChange
 import io.github.chrislo27.rhre3.track.tracker.tempo.TempoChange
-import io.github.chrislo27.rhre3.util.*
+import io.github.chrislo27.rhre3.util.RectanglePool
+import io.github.chrislo27.rhre3.util.Semitones
+import io.github.chrislo27.rhre3.util.scaleFont
+import io.github.chrislo27.rhre3.util.unscaleFont
 import io.github.chrislo27.toolboks.Toolboks
 import io.github.chrislo27.toolboks.i18n.Localization
 import io.github.chrislo27.toolboks.lazysound.LazySound
@@ -80,7 +84,6 @@ import io.github.chrislo27.toolboks.util.MathHelper
 import io.github.chrislo27.toolboks.util.gdxutils.*
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
-import java.nio.charset.Charset
 import java.text.DecimalFormat
 import java.text.DecimalFormatSymbols
 import java.util.*
@@ -402,7 +405,7 @@ class Editor(val main: RHRE3Application, stageCamera: OrthographicCamera, attach
     fun render() = render(updateDelta = true, otherUI = true)
 
     /**
-     * Pre-stage render.
+     * Pre-stage renderWithGlass.
      */
     fun render(updateDelta: Boolean, otherUI: Boolean) {
         val beatRange = getBeatRange()
@@ -536,7 +539,7 @@ class Editor(val main: RHRE3Application, stageCamera: OrthographicCamera, attach
             if (it !is TextureEntity) {
                 if (it.inRenderRange(beatRangeStartFloat, beatRangeEndFloat) && !(it is PlayalongEntity && stage.playalongStage.hideIndicators && remix.playState == PLAYING)) {
                     if (it is ModelEntity<*>) {
-                        it.render(this, batch, themeUsesMenu && useGlassEffect)
+                        it.renderWithGlass(this, batch, themeUsesMenu && useGlassEffect)
                         this.renderMining(batch, it)
                     } else {
                         it.render(this, batch)
@@ -596,7 +599,7 @@ class Editor(val main: RHRE3Application, stageCamera: OrthographicCamera, attach
         // bottom trackers
         this.renderBottomTrackers(batch, beatRange)
 
-        // render selection box, delete zone, sfx vol, ruler
+        // renderWithGlass selection box, delete zone, sfx vol, ruler
         if (otherUI) {
             main.shapeRenderer.projectionMatrix = camera.combined
             this.renderOtherUI(batch, main.shapeRenderer, beatRange, font)
@@ -773,9 +776,9 @@ class Editor(val main: RHRE3Application, stageCamera: OrthographicCamera, attach
         val shift = Gdx.input.isShiftDown()
         val control = Gdx.input.isControlDown()
         val alt = Gdx.input.isAltDown()
-        val left = !stage.isTyping && Gdx.input.isKeyPressed(Input.Keys.A) || Gdx.input.isKeyPressed(Input.Keys.LEFT)
-        val right = !stage.isTyping && Gdx.input.isKeyPressed(Input.Keys.D) || Gdx.input.isKeyPressed(Input.Keys.RIGHT)
-        val accelerateCamera = shift || control
+        val cameraLeft = !stage.isTyping && (Gdx.input.isKeyPressed(Input.Keys.A) || Gdx.input.isKeyPressed(Input.Keys.LEFT))
+        val cameraRight = !stage.isTyping && (Gdx.input.isKeyPressed(Input.Keys.D) || Gdx.input.isKeyPressed(Input.Keys.RIGHT))
+        val accelerateCamera = shift xor control
         val cameraDelta = toScaleX(ENTITY_WIDTH * 5 * Gdx.graphics.deltaTime * if (accelerateCamera) 5 else 1)
         val mouseVector = mouseVector
 
@@ -878,12 +881,12 @@ class Editor(val main: RHRE3Application, stageCamera: OrthographicCamera, attach
         }
 
         if (!stage.isTyping) {
-            if (left) {
+            if (cameraLeft && !(shift && control)) {
                 camera.position.x -= cameraDelta
                 cameraPan = null
                 camera.update()
             }
-            if (right) {
+            if (cameraRight && !(shift && control)) {
                 camera.position.x += cameraDelta
                 cameraPan = null
                 camera.update()
@@ -897,25 +900,80 @@ class Editor(val main: RHRE3Application, stageCamera: OrthographicCamera, attach
                 camera.update()
             }
 
-            if (control && clickOccupation == ClickOccupation.None && !alt && !shift) {
-                if (Gdx.input.isKeyJustPressed(Input.Keys.N)) {
-                    main.screen = ScreenRegistry.getNonNull("newRemix")
-                } else if (Gdx.input.isKeyJustPressed(Input.Keys.O)) {
-                    val screen = ScreenRegistry.getNonNull("openRemix")
-                    main.screen = screen
-                    (screen as? OpenRemixScreen)?.attemptOpenPicker()
-                } else if (Gdx.input.isKeyJustPressed(Input.Keys.S)) {
-                    main.screen = ScreenRegistry.getNonNull("saveRemix")
-                } else if (Gdx.input.isKeyJustPressed(Input.Keys.E)) {
-                    if (!shift && !alt) {
-                        // Export screen
-                        main.screen = ExportRemixScreen(main)
-                    }
-                }
-            }
+            if (clickOccupation == ClickOccupation.None) {
+                if (control && !alt && !shift) {
+                    if (Gdx.input.isKeyJustPressed(Input.Keys.N)) {
+                        main.screen = ScreenRegistry.getNonNull("newRemix")
+                    } else if (Gdx.input.isKeyJustPressed(Input.Keys.O)) {
+                        val screen = ScreenRegistry.getNonNull("openRemix")
+                        main.screen = screen
+                        (screen as? OpenRemixScreen)?.attemptOpenPicker()
+                    } else if (Gdx.input.isKeyJustPressed(Input.Keys.S)) {
+                        main.screen = ScreenRegistry.getNonNull("saveRemix")
+                    } else if (Gdx.input.isKeyJustPressed(Input.Keys.E)) {
+                        if (!shift && !alt) {
+                            // Export screen
+                            main.screen = ExportRemixScreen(main)
+                        }
+                    } else if (Gdx.input.isKeyJustPressed(Input.Keys.F)) {
+                        // Select following
+                        val selectionMinX: Float = this.selection.minBy { it.bounds.x }?.bounds?.x ?: remix.playbackStart
+                        val newSelection = remix.entities.toList().filter { it.bounds.x >= selectionMinX }
+                        if (!this.selection.containsAll(newSelection) || (newSelection.size != this.selection.size)) {
+                            remix.mutate(EntitySelectionAction(this, this.selection, newSelection))
+                            updateMessageLabel()
+                        }
+                    } else if (Gdx.input.isKeyJustPressed(Input.Keys.R)) {
+                        // Select preceding
+                        val selectionMaxX: Float = this.selection.maxBy { it.bounds.maxX }?.bounds?.maxX ?: remix.playbackStart
+                        val newSelection = remix.entities.toList().filter { it.bounds.maxX <= selectionMaxX }
+                        if (!this.selection.containsAll(newSelection) || (newSelection.size != this.selection.size)) {
+                            remix.mutate(EntitySelectionAction(this, this.selection, newSelection))
+                            updateMessageLabel()
+                        }
+                    } else if (Gdx.input.isKeyJustPressed(Input.Keys.T)) {
+                        // Select between
+                        val selectionMinX: Float = this.selection.minBy { it.bounds.x }?.bounds?.x ?: 0f
+                        val selectionMaxX: Float = this.selection.maxBy { it.bounds.maxX }?.bounds?.maxX ?: 0f
+                        val newSelection = remix.entities.toList().filter { it.bounds.x >= selectionMinX && it.bounds.maxX <= selectionMaxX }
+                        if (!this.selection.containsAll(newSelection) || (newSelection.size != this.selection.size)) {
+                            remix.mutate(EntitySelectionAction(this, this.selection, newSelection))
+                            updateMessageLabel()
+                        }
+                    } else if (Gdx.input.isKeyJustPressed(Input.Keys.C)) {
+                        // Copy
+                        if (this.selection.isNotEmpty()) {
+                            Gdx.app.clipboard.contents = PatternStoreScreen.entitiesToJson(remix, selection.toList(), prettyPrinted = false)
+                        }
+                    } else if (Gdx.input.isKeyJustPressed(Input.Keys.X)) {
+                        // Cut
+                        if (this.selection.isNotEmpty()) {
+                            Gdx.app.clipboard.contents = PatternStoreScreen.entitiesToJson(remix, selection.toList(), prettyPrinted = false)
 
-            if (Toolboks.debugMode) {
-                if (Gdx.input.isKeyJustPressed(Input.Keys.P)) {
+                            remix.entities.removeAll(this.selection)
+                            remix.addActionWithoutMutating(ActionGroup(listOf(
+                                    EntityRemoveAction(this, this.selection,
+                                                       this.selection.map { Rectangle(it.bounds) }),
+                                    EntitySelectionAction(this, this.selection.toList(), listOf())
+                                                                             )))
+                            this.selection = listOf()
+
+                            updateMessageLabel()
+                        }
+                    } else if (Gdx.input.isKeyJustPressed(Input.Keys.V)) {
+                        // Jump to clipboard section in stored patterns
+                        stage.selectInPicker(ClipboardStoredPattern)
+                    }
+                } else if (control && shift && !alt) {
+                    if (Gdx.input.isKeyJustPressed(Input.Keys.A)) {
+                        // Select all
+                        val newSelection = remix.entities.toList()
+                        val oldSelection = selection.toList()
+                        if (newSelection.size != oldSelection.size || !newSelection.containsAll(oldSelection)) {
+                            remix.mutate(EntitySelectionAction(this, oldSelection, newSelection))
+                            updateMessageLabel()
+                        }
+                    }
                 }
             }
         }
@@ -986,7 +1044,7 @@ class Editor(val main: RHRE3Application, stageCamera: OrthographicCamera, attach
                                 this.selection = listOf()
 
                                 updateMessageLabel()
-                            } else if (Gdx.input.isKeyJustPressed(Input.Keys.INSERT)) {
+                            } else if (Gdx.input.isKeyJustPressed(Input.Keys.INSERT) || Gdx.input.isKeyJustPressed(Input.Keys.P)) {
                                 main.screen = PatternStoreScreen(main, this, null, selection.toList())
                             }
                         }
@@ -1029,7 +1087,7 @@ class Editor(val main: RHRE3Application, stageCamera: OrthographicCamera, attach
                 current.progress += Gdx.graphics.deltaTime / current.miningTime
                 if (current.timeSinceDigSound >= 1f / 5f) {
                     current.timeSinceDigSound = 0f
-                    AssetRegistry.get<LazySound>("pickaxe_dig${MathUtils.random(1, 6)}").sound.play(0.75f, 0.5f, 0f)
+                    AssetRegistry.get<LazySound>("""pickaxe_dig${MathUtils.random(1, 6)}""").sound.play(0.75f, 0.5f, 0f)
                 } else {
                     current.timeSinceDigSound += Gdx.graphics.deltaTime
                 }
@@ -1038,7 +1096,7 @@ class Editor(val main: RHRE3Application, stageCamera: OrthographicCamera, attach
                     val themeUsesMenu = main.preferences.getBoolean(PreferenceKeys.THEME_USES_MENU, false)
                     val useGlassEffect = glassEffect.fboSupported && main.preferences.getBoolean(PreferenceKeys.SETTINGS_GLASS_ENTITIES, true)
                     explodeEntity(onEntity, true)
-                    AssetRegistry.get<LazySound>("pickaxe_destroy_${if (themeUsesMenu && useGlassEffect) "glass${MathUtils.random(1, 3)}" else "stone${MathUtils.random(1, 4)}"}").sound.play()
+                    AssetRegistry.get<LazySound>("""pickaxe_destroy_${if (themeUsesMenu && useGlassEffect) "glass${MathUtils.random(1, 3)}" else "stone${MathUtils.random(1, 4)}"}""").sound.play()
                     remix.mutate(EntityRemoveAction(this, listOf(onEntity), listOf(Rectangle(onEntity.bounds))))
                     this.selection = this.selection - listOf(onEntity)
                 }
@@ -1542,7 +1600,8 @@ class Editor(val main: RHRE3Application, stageCamera: OrthographicCamera, attach
                     } else if (getTrackerOnMouse(tool.trackerClass.java, false) == null) {
                         val tr = when (tool) {
                             Tool.TEMPO_CHANGE -> {
-                                TempoChange(remix.tempos, beat, remix.tempos.tempoAt(beat), remix.tempos.swingAt(beat), 0f)
+                                val tempoScale = if (shift && !alt) 0.5f else if (!shift && alt) 2f else 1f
+                                TempoChange(remix.tempos, beat, remix.tempos.tempoAt(beat) * tempoScale, remix.tempos.swingAt(beat), 0f)
                             }
                             Tool.MUSIC_VOLUME -> {
                                 MusicVolumeChange(remix.musicVolumes, beat,
@@ -1593,61 +1652,59 @@ class Editor(val main: RHRE3Application, stageCamera: OrthographicCamera, attach
 
                 entities = listOf(entity)
             } else {
-                try {
-                    val pattern: StoredPattern = stage.storedPatternsFilter.currentPattern ?: return true
-
-                    val result = (JsonHandler.OBJECT_MAPPER.readTree(pattern.data) as ArrayNode).map { node ->
-                        Entity.getEntityFromType(node["type"]?.asText(null) ?: return@map null, node as ObjectNode, remix)?.also {
-                            it.readData(node)
-
-                            // Load textures if necessary
-                            val texHashNode = node["_textureData_hash"]
-                            val texDataNode = node["_textureData_data"]
-                            if (texHashNode != null && texDataNode != null) {
-                                val texHash = texHashNode.asText()
-                                if (!remix.textureCache.containsKey(texHash)) {
-                                    try {
-                                        val bytes = Base64.getDecoder().decode(texDataNode.asText().toByteArray(Charset.forName("UTF-8")))
-                                        remix.textureCache[texHash] = Texture(Pixmap(bytes, 0, bytes.size))
-                                    } catch (e: Exception) {
-                                        e.printStackTrace()
-                                    }
-                                }
-                            }
-                        } ?: Remix.createMissingEntitySubtitle(remix, node[ModelEntity.JSON_DATAMODEL]?.textValue() ?: "null",
-                                                               node["beat"]?.floatValue() ?: 0f, node["track"]?.floatValue() ?: 0f,
-                                                               node["width"]?.floatValue() ?: 1f, node["height"]?.floatValue()?.coerceAtLeast(1f) ?: 1f)
-                    }.filterNotNull()
-
-                    if (result.isEmpty())
-                        return true
-
-                    entities = result
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                    return true
+                val pattern: StoredPattern = stage.storedPatternsFilter.currentPattern ?: return true
+                entities = when (pattern) {
+                    is ClipboardStoredPattern -> {
+                        try {
+                            pattern.toEntityList(remix)
+                        } catch (jpe: JsonParseException) {
+                            // The clipboard was not valid JSON at all
+                            Toolboks.LOGGER.warn("Failed to paste from clipboard: ${jpe::class.java.canonicalName}")
+                            listOf<Entity>()
+                        } catch (cce: ClassCastException) {
+                            // Expected ArrayNode, got something else
+                            Toolboks.LOGGER.warn("Failed to paste from clipboard: ${cce::class.java.canonicalName}")
+                            listOf<Entity>()
+                        } catch (e: Exception) {
+                            // Something else went wrong
+                            Toolboks.LOGGER.warn("Failed to paste from clipboard: ${e::class.java.canonicalName}")
+                            e.printStackTrace()
+                            listOf<Entity>()
+                        }
+                    }
+                    else -> {
+                        try {
+                            pattern.toEntityList(remix)
+                        } catch (e: Exception) {
+                            Toolboks.LOGGER.warn("Failed to instantiate stored pattern ${pattern.name}: ${e::class.java.canonicalName}")
+                            e.printStackTrace()
+                            listOf<Entity>()
+                        }
+                    }
                 }
             }
 
-            entities.forEach { entity ->
-                if (entity is ILoadsSounds) {
-                    entity.loadSounds()
+            if (entities.isNotEmpty()) {
+                entities.forEach { entity ->
+                    if (entity is ILoadsSounds) {
+                        entity.loadSounds()
+                    }
                 }
+
+                val oldSelection = this.selection.toList()
+                this.selection = entities.toList()
+                val first = this.selection.first()
+                val selection = ClickOccupation.SelectionDrag(this, first, first, Vector2(0f, 0f),
+                                                              true, false, oldSelection, StretchRegion.NONE)
+                selection.setPositionRelativeToMouse()
+                entities.forEach {
+                    it.updateInterpolation(true)
+                }
+
+                remix.entities.addAll(entities)
+
+                this.clickOccupation = selection
             }
-
-            val oldSelection = this.selection.toList()
-            this.selection = entities.toList()
-            val first = this.selection.first()
-            val selection = ClickOccupation.SelectionDrag(this, first, first, Vector2(0f, 0f),
-                                                          true, false, oldSelection, StretchRegion.NONE)
-            selection.setPositionRelativeToMouse()
-            entities.forEach {
-                it.updateInterpolation(true)
-            }
-
-            remix.entities.addAll(entities)
-
-            this.clickOccupation = selection
         }
 
         return true

@@ -61,7 +61,7 @@ however, read up on the controls first below!
 | **`SPACEBAR`** | Play/stop remix |
 | **`SHIFT+SPACEBAR`** | Pause/resume remix |
 | **`BACKSPACE`** or **`DEL`** | Delete selection |
-| **`INSERT`** | Store selection as a stored pattern (as of v3.12.0) |
+| **`INSERT`** or **`P`** | Store selection as a stored pattern (as of v3.12.0) |
 | **`CTRL+N`** | New remix |
 | **`CTRL+O`** | Open remix |
 | **`CTRL+S`** | Save remix |
@@ -74,8 +74,19 @@ however, read up on the controls first below!
 | **`UP`** or **`W`** | Scroll up (only in editor) |
 | **`DOWN`** or **`S`** | Scroll down (only in editor) |
 | **`SHIFT+SCROLL`** | Pan camera (hold **`CTRL`** to increase speed) |
-| **`TAB`** | Cycle through scroll modes |
+| **`TAB`** | Cycle through scroll modes (pitch or volume) |
 | **`CTRL+K`** | Focus search bar |
+| **`CTRL+SHIFT+A`** | Select all entities |
+| **`CTRL+F`** | Select entities following selection or playback start |
+| **`CTRL+R`** | Select entities preceding selection or playback start |
+| **`CTRL+T`** | Select entities between selections |
+| **`CTRL+C`** | Copy selected entities to clipboard |
+| **`CTRL+X`** | Cut selected entities to clipboard |
+| **`CTRL+V`** | Begin pasting entities from clipboard |
+| __Camera pan controls__ |
+| Holding **`CTRL`** or **`SHIFT`** will accelerate the camera pan speed |
+| **`A`** or **`LEFT`** | Pan camera left |
+| **`D`** or **`RIGHT`** | Pan camera right |
 | __Selection Tool only__ |
 | **`RIGHT CLICK`** on *empty space* | Set playback start |
 | **`MIDDLE CLICK`** or **`CTRL+RIGHT CLICK`** on *empty space* | Set music start |
