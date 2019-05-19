@@ -2,6 +2,7 @@ package io.github.chrislo27.toolboks
 
 import com.badlogic.gdx.InputProcessor
 import com.badlogic.gdx.Screen
+import com.badlogic.gdx.math.Matrix4
 import io.github.chrislo27.toolboks.ui.Stage
 
 /**
@@ -9,6 +10,10 @@ import io.github.chrislo27.toolboks.ui.Stage
  */
 @Suppress("UNCHECKED_CAST")
 public abstract class ToolboksScreen<G : ToolboksGame, SELF : ToolboksScreen<G, SELF>>(public val main: G) : Screen, InputProcessor {
+
+    companion object {
+        private val TMP_MATRIX = Matrix4()
+    }
 
     /**
      * The UI stage. By default it is null.
@@ -21,12 +26,16 @@ public abstract class ToolboksScreen<G : ToolboksGame, SELF : ToolboksScreen<G, 
             val batch = main.batch
 
             batch.begin()
-            stage.render(this as SELF, batch, main.shapeRenderer)
+            if (stage.visible)
+                stage.render(this as SELF, batch, main.shapeRenderer)
             if (Toolboks.stageOutlines != Toolboks.StageOutlineMode.NONE) {
                 val old = batch.packedColor
+                TMP_MATRIX.set(batch.projectionMatrix)
+                batch.projectionMatrix = stage.camera.combined
                 batch.setColor(0f, 1f, 0f, 1f)
                 stage.drawOutline(batch, stage.camera, 1f, Toolboks.stageOutlines == Toolboks.StageOutlineMode.ONLY_VISIBLE)
                 batch.packedColor = old
+                batch.projectionMatrix = TMP_MATRIX
             }
             batch.end()
         }
@@ -71,19 +80,19 @@ public abstract class ToolboksScreen<G : ToolboksGame, SELF : ToolboksScreen<G, 
     }
 
     override fun touchUp(screenX: Int, screenY: Int, pointer: Int, button: Int): Boolean {
-        return stage?.touchUp(screenX, screenY, pointer, button)?: false
+        return stage?.touchUp(screenX, screenY, pointer, button) ?: false
     }
 
     override fun mouseMoved(screenX: Int, screenY: Int): Boolean {
-        return stage?.mouseMoved(screenX, screenY)?: false
+        return stage?.mouseMoved(screenX, screenY) ?: false
     }
 
     override fun keyTyped(character: Char): Boolean {
-        return stage?.keyTyped(character)?: false
+        return stage?.keyTyped(character) ?: false
     }
 
     override fun scrolled(amount: Int): Boolean {
-        return stage?.scrolled(amount)?: false
+        return stage?.scrolled(amount) ?: false
     }
 
     override fun keyUp(keycode: Int): Boolean {

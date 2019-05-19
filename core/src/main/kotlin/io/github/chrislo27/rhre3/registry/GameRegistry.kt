@@ -511,10 +511,17 @@ object GameRegistry : Disposable {
         }
 
         private fun addSpecialGeneratedGames() {
+            fun checkGameDoesNotExist(id: String) {
+                if (gameMap[id] != null) {
+                    error("You cannot overwrite the $id game because it is generated on-the-fly")
+                }
+            }
+
             val playalongObjs = mutableListOf<Datamodel>()
             val playalongGame = Game(PLAYALONG_GAME_ID, "Playalong Input Entities", specialGame.series,
                                      playalongObjs, Texture("images/gameicon/playableEntities.png"), "Special Entities", false, specialGame.priority,
                                      false, specialGame.noDisplay, listOf("playable"), false, true)
+            checkGameDoesNotExist(PLAYALONG_GAME_ID)
             // Press
             playalongObjs += PlayalongModel(playalongGame, "${playalongGame.id}_press_A", listOf(),
                                             "Press ${PlayalongChars.FILLED_A}", false,
@@ -682,6 +689,11 @@ object GameRegistry : Disposable {
                 val separator = if (model is Cue) "/" else "_"
                 if (!model.id.startsWith(game.id + separator)) {
                     builder.append("Model ID (${model.id}) should start with \"*$separator\"\n")
+                }
+                model.deprecatedIDs.forEach { depId ->
+                    if (depId.startsWith("*")) {
+                        builder.append("Deprecated ID $depId for ${model.id} should not be star-substituted, use fully-qualified ID\n")
+                    }
                 }
 
                 /*

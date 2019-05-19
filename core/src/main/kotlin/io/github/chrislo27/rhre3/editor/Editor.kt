@@ -331,7 +331,7 @@ class Editor(val main: RHRE3Application, stageCamera: OrthographicCamera, attach
         }
 
     init {
-        Localization.listeners += {
+        Localization.addListener {
             updateMessageLabel()
 
             cachedPlaybackStart = Float.POSITIVE_INFINITY to ""
@@ -728,6 +728,11 @@ class Editor(val main: RHRE3Application, stageCamera: OrthographicCamera, attach
                 val borderedFont = main.defaultBorderedFont
                 borderedFont.scaleFont(staticCamera)
                 borderedFont.scaleMul(1f)
+
+                if (remix.playState != STOPPED) {
+                    // This shouldn't be called since remixes aren't supposed to be playable without tempo changes
+                    this.renderImplicitTempo(batch)
+                }
 
                 borderedFont.setColor(1f, 1f, 1f, 1f)
 
@@ -1601,7 +1606,7 @@ class Editor(val main: RHRE3Application, stageCamera: OrthographicCamera, attach
                         val tr = when (tool) {
                             Tool.TEMPO_CHANGE -> {
                                 val tempoScale = if (shift && !alt) 0.5f else if (!shift && alt) 2f else 1f
-                                TempoChange(remix.tempos, beat, remix.tempos.tempoAt(beat) * tempoScale, remix.tempos.swingAt(beat), 0f)
+                                TempoChange(remix.tempos, beat, (remix.tempos.tempoAt(beat) * tempoScale).coerceIn(TempoChange.MIN_TEMPO, TempoChange.MAX_TEMPO), remix.tempos.swingAt(beat), 0f)
                             }
                             Tool.MUSIC_VOLUME -> {
                                 MusicVolumeChange(remix.musicVolumes, beat,
@@ -2150,6 +2155,7 @@ class Editor(val main: RHRE3Application, stageCamera: OrthographicCamera, attach
         val debugKey = Input.Keys.toString(Toolboks.DEBUG_KEY)
         val rangeStartF = range.first.toFloat()
         val rangeEndF = range.last.toFloat()
+        val duration = remix.duration
         str.apply {
             append("Camera: [")
             append(THREE_DECIMAL_PLACES_FORMATTER.format(camera.position.x))
@@ -2180,6 +2186,14 @@ class Editor(val main: RHRE3Application, stageCamera: OrthographicCamera, attach
             append(THREE_DECIMAL_PLACES_FORMATTER.format(remix.beat))
             append(" / ")
             append(THREE_DECIMAL_PLACES_FORMATTER.format(remix.seconds)).append("\n")
+
+            append("Dur.: ♩")
+            append(if (duration.isInfinite()) "$duration" else THREE_DECIMAL_PLACES_FORMATTER.format(duration))
+            append(" / ")
+            val signedSec = remix.tempos.beatsToSeconds(duration)
+            val sec = Math.abs(signedSec)
+            val seconds = if (signedSec.isInfinite()) "$signedSec" else ((if (signedSec < 0) "-" else "") + Editor.TRACKER_MINUTES_FORMATTER.format((sec / 60).toLong()) + ":" + Editor.TRACKER_TIME_FORMATTER.format(sec % 60.0))
+            append(seconds).append("\n")
 
             val timeSig = remix.timeSignatures.getTimeSignature(remix.beat)
             val timeSigStr = if (timeSig != null) ("${timeSig.beatsPerMeasure}/${timeSig.beatUnit} (${remix.timeSignatures.getMeasurePart(remix.beat)}, ${remix.timeSignatures.getMeasure(remix.beat)})") else "none"

@@ -40,6 +40,7 @@ import io.github.chrislo27.toolboks.Toolboks
 import io.github.chrislo27.toolboks.i18n.Localization
 import io.github.chrislo27.toolboks.registry.AssetRegistry
 import io.github.chrislo27.toolboks.ui.*
+import io.github.chrislo27.toolboks.util.MathHelper
 import io.github.chrislo27.toolboks.util.gdxutils.*
 import java.util.*
 import kotlin.math.roundToInt
@@ -147,14 +148,14 @@ class EditorStage(parent: UIElement<EditorScreen>?,
     }
 
     init {
-        Localization.listeners += {
+        Localization.addListener {
             updateSelected(DirtyType.SEARCH_DIRTY)
         }
     }
 
     private fun setHoverText(text: String) {
         val label = hoverTextLabel
-        val labelLoc = label.location
+        val loc = label.location
         val font = label.getFont()
 
         label.visible = true
@@ -162,25 +163,30 @@ class EditorStage(parent: UIElement<EditorScreen>?,
 
         font.data.setScale(label.palette.fontScale * label.fontScaleMultiplier)
 
-        labelLoc.set(pixelX = camera.getInputX(), pixelY = camera.getInputY() + 2,
-                     pixelWidth = font.getTextWidth(label.text) + 6,
-                     pixelHeight = font.getTextHeight(text) + font.capHeight)
+        loc.set(pixelX = camera.getInputX(), pixelY = camera.getInputY() + 2,
+                pixelWidth = font.getTextWidth(label.text) + 6,
+                pixelHeight = font.getTextHeight(text) + font.capHeight)
 
         val yLimit = label.stage.camera.viewportHeight
-        val top = labelLoc.pixelY + labelLoc.pixelHeight
-        if (top > yLimit) {
-            val height = labelLoc.pixelHeight
-            labelLoc.set(pixelY = yLimit - labelLoc.pixelHeight,
-                         pixelX = labelLoc.pixelX + ((top - yLimit) / height).coerceAtMost(1f) * height)
+        val top = loc.pixelY + loc.pixelHeight
+        val xLimit = label.stage.camera.viewportWidth - loc.pixelWidth
+        if (loc.pixelX > xLimit || top > yLimit) {
+            val newX = label.stage.camera.getInputX() - loc.pixelWidth
+            val height = loc.pixelHeight
+            if (newX < 0) {
+                loc.set(pixelY = yLimit - height, pixelX = loc.pixelX + ((top - yLimit) / height).coerceAtMost(1f) * height)
+            } else {
+                loc.set(pixelX = camera.getInputX() - loc.pixelWidth, pixelY = loc.pixelY.coerceAtMost(yLimit - height))
+            }
         }
 
         // clamp X
-        labelLoc.set(pixelX = Math.min(labelLoc.pixelX,
-                                       label.stage.camera.viewportWidth - labelLoc.pixelWidth))
+        loc.set(pixelX = Math.min(loc.pixelX,
+                                  label.stage.camera.viewportWidth - loc.pixelWidth))
 
         font.data.setScale(1f)
         val labelParent = label.parent!!
-        label.onResize(labelParent.location.realWidth, labelParent.location.realHeight)
+        label.onResize(labelParent.location.realWidth, labelParent.location.realHeight, 1f, 1f)
     }
 
     private fun UIElement<*>.searchForHoverTextRec(): String? {
@@ -349,7 +355,7 @@ class EditorStage(parent: UIElement<EditorScreen>?,
                                 val isFavourited = isFavourited()
                                 if (isFavourited) {
                                     addLabel(2, favouriteLabel)
-                                    favouriteLabel.onResize(location.realWidth, location.realHeight)
+                                    favouriteLabel.onResize(location.realWidth, location.realHeight, 1f, 1f)
                                 } else {
                                     removeLabel(favouriteLabel)
                                 }
@@ -381,7 +387,7 @@ class EditorStage(parent: UIElement<EditorScreen>?,
                             val isFavourited = isFavourited()
                             if (isFavourited) {
                                 addLabel(2, favouriteLabel)
-                                favouriteLabel.onResize(location.realWidth, location.realHeight)
+                                favouriteLabel.onResize(location.realWidth, location.realHeight, 1f, 1f)
                             } else {
                                 removeLabel(favouriteLabel)
                             }
@@ -569,7 +575,7 @@ class EditorStage(parent: UIElement<EditorScreen>?,
                               screenWidth = 1f - (Editor.BUTTON_PADDING / RHRE3.WIDTH) * 2f,
                               screenHeight = Editor.BUTTON_SIZE / RHRE3.HEIGHT)
         }
-        pickerStage = object : Stage<EditorScreen>(this, camera) {
+        pickerStage = object : Stage<EditorScreen>(this@EditorStage, camera) {
             override fun scrolled(amount: Int): Boolean {
                 if (isMouseOver()) {
                     val filter = editor.pickerSelection.filter
@@ -777,7 +783,7 @@ class EditorStage(parent: UIElement<EditorScreen>?,
             this.visible = false
         }
         playalongStage = PlayalongStage(editor, palette, this, camera).apply {
-//            this.location.set(0f,
+            //            this.location.set(0f,
 //                              messageBarStage.location.screenY + messageBarStage.location.screenHeight,
 //                              1f, pickerStage.location.screenHeight + minimapBarStage.location.screenHeight)
             this.location.set(screenY = messageBarStage.location.screenY + messageBarStage.location.screenHeight)
@@ -1551,7 +1557,7 @@ class EditorStage(parent: UIElement<EditorScreen>?,
                     this.removeLabel(selectedLabel)
                     if (field) {
                         this.addLabel(1, selectedLabel)
-                        selectedLabel.onResize(this.location.realWidth, this.location.realHeight)
+                        selectedLabel.onResize(this.location.realWidth, this.location.realHeight, 1f, 1f)
                     }
                 }
             }
@@ -1588,7 +1594,9 @@ class EditorStage(parent: UIElement<EditorScreen>?,
             if (game != null) {
                 return (if (if (isVariant) game.isFavourited else game.gameGroup.isFavourited) "[YELLOW]★[] " else "") +
                         (if (game.isCustom) "[CYAN]★[]" else "") +
-                        (if (isVariant) game.name else game.gameGroup.name) + "\n[LIGHT_GRAY]${Localization["editor.favouriteToggle"]}[]" +
+                        (if (isVariant) game.name else game.gameGroup.name) +
+                        (if (Toolboks.debugMode) "\n[LIGHT_GRAY]${game.id}[]" else "") +
+                        "\n[LIGHT_GRAY]${Localization["editor.favouriteToggle"]}[]" +
                         if (ModdingUtils.moddingToolsEnabled && (isVariant || isSingleInGameGroup())) {
                             GameRegistry.moddingMetadata.currentData.joinToStringFromData(game, null).takeIf { it.isNotEmpty() }?.let { "\n$it" } ?: ""
                         } else ("")
@@ -1676,6 +1684,8 @@ class EditorStage(parent: UIElement<EditorScreen>?,
                 PlayState.PAUSED -> if (type != PlayState.PAUSED) enabled = true
                 PlayState.PLAYING -> if (type != PlayState.PLAYING) enabled = true
             }
+            if (type == PlayState.PLAYING && !editor.remix.canPlayRemix)
+                enabled = false
         }
 
         override fun getHoverText(): String {
@@ -1683,7 +1693,7 @@ class EditorStage(parent: UIElement<EditorScreen>?,
                 PlayState.STOPPED -> "editor.stop"
                 PlayState.PAUSED -> "editor.pause"
                 PlayState.PLAYING -> "editor.play"
-            }]
+            }] + (if (type == PlayState.PLAYING && !editor.remix.canPlayRemix) "\n${Localization["editor.noTempo"]}" else "")
         }
 
         override fun onLeftClick(xPercent: Float, yPercent: Float) {
@@ -1720,6 +1730,17 @@ class EditorStage(parent: UIElement<EditorScreen>?,
 
         init {
             label.image = TextureRegion(tool.texture)
+        }
+
+        override fun render(screen: EditorScreen, batch: SpriteBatch, shapeRenderer: ShapeRenderer) {
+            if (tool == Tool.TEMPO_CHANGE) {
+                if (editor.remix.tempos.secondsMap.isEmpty()) {
+                    label.tint.fromHsv(MathHelper.getSawtoothWave(1.5f) * 360f, 0.3f, 0.75f)
+                } else {
+                    label.tint.set(1f, 1f, 1f, 1f)
+                }
+            }
+            super.render(screen, batch, shapeRenderer)
         }
 
         override fun onLeftClick(xPercent: Float, yPercent: Float) {

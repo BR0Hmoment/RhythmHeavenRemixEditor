@@ -46,6 +46,9 @@ abstract class ToolboksGame(val logger: Logger, val logToFile: File?,
         lateinit var smallTexture: Texture
             private set
 
+        lateinit var gameInstance: ToolboksGame
+            private set
+
     }
 
     val versionString: String = version.toString()
@@ -90,6 +93,7 @@ abstract class ToolboksGame(val logger: Logger, val logToFile: File?,
             SysOutPiper.pipe(programLaunchArguments, this, logToFile)
         }
         Toolboks.LOGGER = logger
+        ToolboksGame.gameInstance = this
 
         originalResolution = Pair(Gdx.graphics.width, Gdx.graphics.height)
         resetCamera()
@@ -218,7 +222,7 @@ ${getDebugString()}
 ${(screen as? ToolboksScreen<*, *>)?.getDebugString() ?: ""}"""
 
                     font.setColor(1f, 1f, 1f, 1f)
-                    font.drawCompressed(batch, string, 8f, Gdx.graphics.height - 8f, Gdx.graphics.width - 16f,
+                    font.drawCompressed(batch, string, 8f, defaultCamera.viewportHeight - 8f, defaultCamera.viewportWidth - 16f,
                                         Align.left)
 
                     font.data.setScale(1f)
