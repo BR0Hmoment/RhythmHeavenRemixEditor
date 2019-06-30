@@ -10,8 +10,8 @@ import io.github.chrislo27.rhre3.editor.Editor
 import io.github.chrislo27.rhre3.editor.Tool
 import io.github.chrislo27.rhre3.entity.Entity
 import io.github.chrislo27.rhre3.modding.ModdingUtils
-import io.github.chrislo27.rhre3.registry.GameRegistry
-import io.github.chrislo27.rhre3.registry.datamodel.Datamodel
+import io.github.chrislo27.rhre3.sfxdb.SFXDatabase
+import io.github.chrislo27.rhre3.sfxdb.datamodel.Datamodel
 import io.github.chrislo27.rhre3.theme.Theme
 import io.github.chrislo27.rhre3.track.Remix
 import io.github.chrislo27.rhre3.util.Semitones
@@ -29,13 +29,12 @@ abstract class ModelEntity<out M : Datamodel>(remix: Remix, val datamodel: M)
         const val BORDER: Float = 4f
         const val JSON_DATAMODEL = "datamodel"
         private val TMP_COLOR = Color(1f, 1f, 1f, 1f)
+        var attemptTextOnScreen: Boolean = true
     }
 
     final override val jsonType: String = "model"
     open val renderText: String
         get() = datamodel.newlinedName
-    open val attemptTextOnScreen: Boolean
-        get() = true
     val isSpecialEntity: Boolean get() = datamodel.isSpecial
     open var needsNameTooltip: Boolean = false
         protected set
@@ -83,7 +82,7 @@ abstract class ModelEntity<out M : Datamodel>(remix: Remix, val datamodel: M)
         val game = datamodel.game
         val textColor = editor.theme.entities.nameColor
         val text = renderText + (if (ModdingUtils.moddingToolsEnabled && editor.currentTool == Tool.RULER) {
-            GameRegistry.moddingMetadata.currentData.joinToStringFromData(datamodel, this, keyColor = "#$textColor").takeIf { it.isNotEmpty() }?.let { "\n$it" } ?: ""
+            SFXDatabase.moddingMetadata.currentData.joinToStringFromData(datamodel, this, keyColor = "#$textColor").takeIf { it.isNotEmpty() }?.let { "\n$it" } ?: ""
         } else "")
         val font = remix.main.defaultFont
         val color = getRenderColor(editor, editor.theme)

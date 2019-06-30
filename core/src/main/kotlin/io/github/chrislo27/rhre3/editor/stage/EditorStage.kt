@@ -19,6 +19,7 @@ import io.github.chrislo27.rhre3.editor.Tool
 import io.github.chrislo27.rhre3.editor.picker.*
 import io.github.chrislo27.rhre3.editor.quickswitch.SwitchToGame
 import io.github.chrislo27.rhre3.editor.stage.advopt.CopyGamesUsedButton
+import io.github.chrislo27.rhre3.editor.stage.advopt.ExportImageButton
 import io.github.chrislo27.rhre3.editor.stage.advopt.SelectionToJSONButton
 import io.github.chrislo27.rhre3.editor.stage.playalong.PlayalongStage
 import io.github.chrislo27.rhre3.editor.stage.playalong.PlayalongToggleButton
@@ -27,13 +28,13 @@ import io.github.chrislo27.rhre3.entity.model.special.SubtitleEntity
 import io.github.chrislo27.rhre3.modding.ModdingUtils
 import io.github.chrislo27.rhre3.patternstorage.FileStoredPattern
 import io.github.chrislo27.rhre3.patternstorage.StoredPattern
-import io.github.chrislo27.rhre3.registry.Game
-import io.github.chrislo27.rhre3.registry.GameMetadata
-import io.github.chrislo27.rhre3.registry.GameRegistry
-import io.github.chrislo27.rhre3.registry.Series
-import io.github.chrislo27.rhre3.registry.datamodel.Datamodel
-import io.github.chrislo27.rhre3.registry.datamodel.impl.Cue
 import io.github.chrislo27.rhre3.screen.EditorScreen
+import io.github.chrislo27.rhre3.sfxdb.Game
+import io.github.chrislo27.rhre3.sfxdb.GameMetadata
+import io.github.chrislo27.rhre3.sfxdb.SFXDatabase
+import io.github.chrislo27.rhre3.sfxdb.Series
+import io.github.chrislo27.rhre3.sfxdb.datamodel.Datamodel
+import io.github.chrislo27.rhre3.sfxdb.datamodel.impl.Cue
 import io.github.chrislo27.rhre3.track.PlayState
 import io.github.chrislo27.rhre3.util.OSUtils
 import io.github.chrislo27.toolboks.Toolboks
@@ -41,7 +42,10 @@ import io.github.chrislo27.toolboks.i18n.Localization
 import io.github.chrislo27.toolboks.registry.AssetRegistry
 import io.github.chrislo27.toolboks.ui.*
 import io.github.chrislo27.toolboks.util.MathHelper
-import io.github.chrislo27.toolboks.util.gdxutils.*
+import io.github.chrislo27.toolboks.util.gdxutils.getInputX
+import io.github.chrislo27.toolboks.util.gdxutils.isAltDown
+import io.github.chrislo27.toolboks.util.gdxutils.isControlDown
+import io.github.chrislo27.toolboks.util.gdxutils.isShiftDown
 import java.util.*
 import kotlin.math.roundToInt
 
@@ -86,7 +90,6 @@ class EditorStage(parent: UIElement<EditorScreen>?,
     val messageLabel: TextLabel<EditorScreen>
     val controlsLabel: TextLabel<EditorScreen>
 
-    val hoverTextLabel: TextLabel<EditorScreen>
     val searchFilter = SearchFilter(this)
     val favouritesFilter = FavouritesFilter()
     val recentsFilter = RecentFilter()
@@ -143,64 +146,10 @@ class EditorStage(parent: UIElement<EditorScreen>?,
         CLEAN, DIRTY, SEARCH_DIRTY
     }
 
-    interface HasHoverText {
-        fun getHoverText(): String
-    }
-
     init {
         Localization.addListener {
             updateSelected(DirtyType.SEARCH_DIRTY)
         }
-    }
-
-    private fun setHoverText(text: String) {
-        val label = hoverTextLabel
-        val loc = label.location
-        val font = label.getFont()
-
-        label.visible = true
-        label.text = text
-
-        font.data.setScale(label.palette.fontScale * label.fontScaleMultiplier)
-
-        loc.set(pixelX = camera.getInputX(), pixelY = camera.getInputY() + 2,
-                pixelWidth = font.getTextWidth(label.text) + 6,
-                pixelHeight = font.getTextHeight(text) + font.capHeight)
-
-        val yLimit = label.stage.camera.viewportHeight
-        val top = loc.pixelY + loc.pixelHeight
-        val xLimit = label.stage.camera.viewportWidth - loc.pixelWidth
-        if (loc.pixelX > xLimit || top > yLimit) {
-            val newX = label.stage.camera.getInputX() - loc.pixelWidth
-            val height = loc.pixelHeight
-            if (newX < 0) {
-                loc.set(pixelY = yLimit - height, pixelX = loc.pixelX + ((top - yLimit) / height).coerceAtMost(1f) * height)
-            } else {
-                loc.set(pixelX = camera.getInputX() - loc.pixelWidth, pixelY = loc.pixelY.coerceAtMost(yLimit - height))
-            }
-        }
-
-        // clamp X
-        loc.set(pixelX = Math.min(loc.pixelX,
-                                  label.stage.camera.viewportWidth - loc.pixelWidth))
-
-        font.data.setScale(1f)
-        val labelParent = label.parent!!
-        label.onResize(labelParent.location.realWidth, labelParent.location.realHeight, 1f, 1f)
-    }
-
-    private fun UIElement<*>.searchForHoverTextRec(): String? {
-        if (this is HasHoverText && isMouseOver() && visible) {
-            return getHoverText()
-        } else if (this is Stage<*> && visible) {
-            for (e in elements) {
-                val hov = e.searchForHoverTextRec()
-                if (hov != null) {
-                    return hov
-                }
-            }
-        }
-        return null
     }
 
     fun selectInPicker(datamodel: Datamodel) {
@@ -265,12 +214,6 @@ class EditorStage(parent: UIElement<EditorScreen>?,
     }
 
     override fun render(screen: EditorScreen, batch: SpriteBatch, shapeRenderer: ShapeRenderer) {
-        hoverTextLabel.visible = false
-        val hoverText = this.searchForHoverTextRec() ?: editor.getHoverText()
-        if (hoverText.isNotEmpty()) {
-            setHoverText(hoverText)
-        }
-
         if (Toolboks.debugMode != wasDebug) {
             wasDebug = Toolboks.debugMode
             updateSelected(DirtyType.DIRTY)
@@ -310,7 +253,7 @@ class EditorStage(parent: UIElement<EditorScreen>?,
             }
         }
 
-        if (isDirty != DirtyType.CLEAN && !GameRegistry.isDataLoading()) {
+        if (isDirty != DirtyType.CLEAN && !SFXDatabase.isDataLoading()) {
             val pickerSelection = editor.pickerSelection
             val filter = pickerSelection.filter
             val isSearching = filter === searchFilter
@@ -476,7 +419,7 @@ class EditorStage(parent: UIElement<EditorScreen>?,
                 } else if (filter == searchFilter) {
                     gameStageText.text = Localization["editor.nothing.search"]
                 } else if (filter is CustomFilter) {
-                    gameStageText.text = Localization["editor.nothing.customs", "${if (OSUtils.IS_WINDOWS) "<user>" else "~"}/" + RHRE3.RHRE3_FOLDER.name() + "/" + GameRegistry.CUSTOM_SFX_FOLDER.name()]
+                    gameStageText.text = Localization["editor.nothing.customs", "${if (OSUtils.IS_WINDOWS) "<user>" else "~"}/" + RHRE3.RHRE3_FOLDER.name() + "/" + SFXDatabase.CUSTOM_SFX_FOLDER.name()]
                     val screenX = 0.25f - customSoundsFolderButton.location.screenWidth / 2f
                     if (customSoundsFolderButton.location.screenX != screenX) {
                         customSoundsFolderButton.location.set(screenY = 0.5f * pickerStage.percentageOfHeight(Editor.ICON_PADDING), screenX = screenX)
@@ -733,11 +676,11 @@ class EditorStage(parent: UIElement<EditorScreen>?,
             this.elements += entityTextField
         }
 
-        hoverTextLabel = TextLabel(palette.copy(backColor = Color(palette.backColor).also { it.a *= 1.5f }),
+        tooltipTextIsLocalizationKey = false
+        tooltipElement = TextLabel(palette.copy(backColor = Color(palette.backColor).also { it.a *= 1.5f }, fontScale = 0.75f),
                                    this, this).apply {
             this.background = true
             this.isLocalizationKey = false
-            this.fontScaleMultiplier = 0.75f
             this.textWrapping = false
             this.visible = false
             this.alignment = Align.bottomLeft
@@ -805,7 +748,6 @@ class EditorStage(parent: UIElement<EditorScreen>?,
 //        elements += themeEditorStage
         elements += themeChooserStage
         elements += viewChooserStage
-        elements += hoverTextLabel
         paneLikeStages += themeChooserStage
         paneLikeStages += viewChooserStage
         paneLikeStages += themeEditorStage
@@ -855,7 +797,7 @@ class EditorStage(parent: UIElement<EditorScreen>?,
                     override fun onLeftClick(xPercent: Float, yPercent: Float) {
                         super.onLeftClick(xPercent, yPercent)
 
-                        Gdx.net.openURI("file:///${GameRegistry.CUSTOM_SFX_FOLDER.file().absolutePath}")
+                        Gdx.net.openURI("file:///${SFXDatabase.CUSTOM_SFX_FOLDER.file().absolutePath}")
                     }
                 }.apply {
                     setLocation(Editor.ICON_COUNT_X, 0)
@@ -881,7 +823,7 @@ class EditorStage(parent: UIElement<EditorScreen>?,
                                     super.render(screen, batch, shapeRenderer)
                                     val filter = editor.pickerSelection.filter
                                     val label = this.labels.first() as TextLabel
-                                    if (GameRegistry.isDataLoading() || if (isVariant) filter.areGamesEmpty else filter.areGroupsEmpty) {
+                                    if (SFXDatabase.isDataLoading() || if (isVariant) filter.areGamesEmpty else filter.areGroupsEmpty) {
                                         if (isUp) {
                                             label.text = Editor.ARROWS[2]
                                         } else {
@@ -1041,7 +983,7 @@ class EditorStage(parent: UIElement<EditorScreen>?,
                         val label = this.labels.first() as TextLabel
 
                         val currentDatamodelList = filter.currentDatamodelList
-                        if (GameRegistry.isDataLoading() || currentDatamodelList == null) {
+                        if (SFXDatabase.isDataLoading() || currentDatamodelList == null) {
                             label.text = Editor.ARROWS[2]
                         } else {
                             if (currentDatamodelList.currentIndex > 0) {
@@ -1096,7 +1038,7 @@ class EditorStage(parent: UIElement<EditorScreen>?,
                         val label = this.labels.first() as TextLabel
 
                         val currentDatamodelList = filter.currentDatamodelList
-                        if (GameRegistry.isDataLoading() || currentDatamodelList == null) {
+                        if (SFXDatabase.isDataLoading() || currentDatamodelList == null) {
                             label.text = Editor.ARROWS[3]
                         } else {
                             if (currentDatamodelList.currentIndex < currentDatamodelList.maxIndex) {
@@ -1454,6 +1396,9 @@ class EditorStage(parent: UIElement<EditorScreen>?,
                 this.location.set(screenWidth = size, screenX = size * 11 + padding * 11)
             }
             buttonBarStage.elements += playalongToggleButton
+            buttonBarStage.elements += ExportImageButton(editor, palette, buttonBarStage, buttonBarStage).apply {
+                this.location.set(screenWidth = size, screenX = size * 12 + padding * 12)
+            }
             buttonBarStage.elements += SelectionToJSONButton(editor, palette, buttonBarStage, buttonBarStage).apply {
                 this.location.set(screenWidth = size * 4 - padding * 4, screenX = size * 13 + padding * 13)
             }
@@ -1576,7 +1521,7 @@ class EditorStage(parent: UIElement<EditorScreen>?,
     open inner class GameButton(val x: Int, val y: Int, val isVariant: Boolean,
                                 palette: UIPalette, parent: UIElement<EditorScreen>, stage: Stage<EditorScreen>,
                                 f: SelectableButton.(Float, Float) -> Unit)
-        : SelectableButton(palette, parent, stage, f), HasHoverText {
+        : SelectableButton(palette, parent, stage, f) {
 
         var game: Game? = null
             set(value) {
@@ -1589,20 +1534,22 @@ class EditorStage(parent: UIElement<EditorScreen>?,
                 }
             }
 
-        override fun getHoverText(): String {
-            val game = game
-            if (game != null) {
-                return (if (if (isVariant) game.isFavourited else game.gameGroup.isFavourited) "[YELLOW]★[] " else "") +
-                        (if (game.isCustom) "[CYAN]★[]" else "") +
-                        (if (isVariant) game.name else game.gameGroup.name) +
-                        (if (Toolboks.debugMode) "\n[LIGHT_GRAY]${game.id}[]" else "") +
-                        "\n[LIGHT_GRAY]${Localization["editor.favouriteToggle"]}[]" +
-                        if (ModdingUtils.moddingToolsEnabled && (isVariant || isSingleInGameGroup())) {
-                            GameRegistry.moddingMetadata.currentData.joinToStringFromData(game, null).takeIf { it.isNotEmpty() }?.let { "\n$it" } ?: ""
-                        } else ("")
+        override var tooltipText: String?
+            set(_) {}
+            get() {
+                val game = game
+                if (game != null) {
+                    return (if (if (isVariant) game.isFavourited else game.gameGroup.isFavourited) "[YELLOW]★[] " else "") +
+                            (if (game.isCustom) "[CYAN]★[]" else "") +
+                            (if (isVariant) game.name else game.gameGroup.name) +
+                            (if (Toolboks.debugMode) "\n[LIGHT_GRAY]${game.id}[]" else "") +
+                            "\n[LIGHT_GRAY]${Localization["editor.favouriteToggle"]}[]" +
+                            if (ModdingUtils.moddingToolsEnabled && (isVariant || isSingleInGameGroup())) {
+                                SFXDatabase.moddingMetadata.currentData.joinToStringFromData(game, null).takeIf { it.isNotEmpty() }?.let { "\n$it" } ?: ""
+                            } else ("")
+                }
+                return ""
             }
-            return ""
-        }
 
         fun isSingleInGameGroup(): Boolean {
             val filter = editor.pickerSelection.filter
@@ -1655,11 +1602,13 @@ class EditorStage(parent: UIElement<EditorScreen>?,
 
     open inner class FilterButton(val filter: Filter, val localization: String,
                                   palette: UIPalette, parent: UIElement<EditorScreen>, stage: Stage<EditorScreen>)
-        : SelectableButton(palette, parent, stage, { _, _ -> }), HasHoverText {
+        : SelectableButton(palette, parent, stage, { _, _ -> }) {
 
-        override fun getHoverText(): String {
-            return Localization[localization]
-        }
+        override var tooltipText: String?
+            set(_) {}
+            get() {
+                return Localization[localization]
+            }
 
         override fun onLeftClick(xPercent: Float, yPercent: Float) {
             gameSwitchBack = createQuickSwitch() ?: gameSwitchBack
@@ -1675,7 +1624,7 @@ class EditorStage(parent: UIElement<EditorScreen>?,
 
     open inner class PlaybackButton(val type: PlayState, palette: UIPalette, parent: UIElement<EditorScreen>,
                                     stage: Stage<EditorScreen>)
-        : Button<EditorScreen>(palette, parent, stage), HasHoverText {
+        : Button<EditorScreen>(palette, parent, stage) {
 
         private fun updateEnabledness() {
             this.enabled = false
@@ -1688,13 +1637,15 @@ class EditorStage(parent: UIElement<EditorScreen>?,
                 enabled = false
         }
 
-        override fun getHoverText(): String {
-            return Localization[when (type) {
-                PlayState.STOPPED -> "editor.stop"
-                PlayState.PAUSED -> "editor.pause"
-                PlayState.PLAYING -> "editor.play"
-            }] + (if (type == PlayState.PLAYING && !editor.remix.canPlayRemix) "\n${Localization["editor.noTempo"]}" else "")
-        }
+        override var tooltipText: String?
+            set(_) {}
+            get() {
+                return Localization[when (type) {
+                    PlayState.STOPPED -> "editor.stop"
+                    PlayState.PAUSED -> "editor.pause"
+                    PlayState.PLAYING -> "editor.play"
+                }] + (if (type == PlayState.PLAYING && !editor.remix.canPlayRemix) "\n${Localization["editor.noTempo"]}" else "")
+            }
 
         override fun onLeftClick(xPercent: Float, yPercent: Float) {
             super.onLeftClick(xPercent, yPercent)
@@ -1710,7 +1661,7 @@ class EditorStage(parent: UIElement<EditorScreen>?,
     open inner class ToolButton(val tool: Tool,
                                 palette: UIPalette, parent: UIElement<EditorScreen>, stage: Stage<EditorScreen>,
                                 onLeftClickFunc: SelectableButton.(Float, Float) -> Unit)
-        : SelectableButton(palette, parent, stage, onLeftClickFunc), HasHoverText {
+        : SelectableButton(palette, parent, stage, onLeftClickFunc) {
         override val selectedLabel: ImageLabel<EditorScreen> = ImageLabel(palette, this, stage).apply {
             this.image = selectorRegionSeries
         }
@@ -1724,9 +1675,11 @@ class EditorStage(parent: UIElement<EditorScreen>?,
             } + (if (tool.keybinds.isNotEmpty()) " [LIGHT_GRAY]${tool.keybinds.joinToString(" ") { "[[$it]" }}[]" else "")
         }
 
-        override fun getHoverText(): String {
-            return Localization[tool.nameId] + keyText
-        }
+        override var tooltipText: String?
+            set(_) {}
+            get() {
+                return Localization[tool.nameId] + keyText
+            }
 
         init {
             label.image = TextureRegion(tool.texture)

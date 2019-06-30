@@ -46,14 +46,14 @@ import io.github.chrislo27.rhre3.patternstorage.ClipboardStoredPattern
 import io.github.chrislo27.rhre3.patternstorage.StoredPattern
 import io.github.chrislo27.rhre3.patternstorage.toEntityList
 import io.github.chrislo27.rhre3.playalong.Playalong
-import io.github.chrislo27.rhre3.registry.Game
-import io.github.chrislo27.rhre3.registry.GameGroup
-import io.github.chrislo27.rhre3.registry.GameMetadata
-import io.github.chrislo27.rhre3.registry.GameRegistry
-import io.github.chrislo27.rhre3.registry.datamodel.Datamodel
-import io.github.chrislo27.rhre3.registry.datamodel.ResponseModel
-import io.github.chrislo27.rhre3.registry.datamodel.impl.Cue
 import io.github.chrislo27.rhre3.screen.*
+import io.github.chrislo27.rhre3.sfxdb.Game
+import io.github.chrislo27.rhre3.sfxdb.GameGroup
+import io.github.chrislo27.rhre3.sfxdb.GameMetadata
+import io.github.chrislo27.rhre3.sfxdb.SFXDatabase
+import io.github.chrislo27.rhre3.sfxdb.datamodel.Datamodel
+import io.github.chrislo27.rhre3.sfxdb.datamodel.ResponseModel
+import io.github.chrislo27.rhre3.sfxdb.datamodel.impl.Cue
 import io.github.chrislo27.rhre3.theme.LoadedThemes
 import io.github.chrislo27.rhre3.theme.Theme
 import io.github.chrislo27.rhre3.track.EditorRemix
@@ -91,7 +91,7 @@ import kotlin.math.roundToInt
 
 
 class Editor(val main: RHRE3Application, stageCamera: OrthographicCamera, attachMidiListeners: Boolean)
-    : Disposable, InputProcessor, EditorStage.HasHoverText {
+    : Disposable, InputProcessor {
 
     companion object {
         const val ENTITY_HEIGHT: Float = 48f
@@ -407,24 +407,24 @@ class Editor(val main: RHRE3Application, stageCamera: OrthographicCamera, attach
     /**
      * Pre-stage renderWithGlass.
      */
-    fun render(updateDelta: Boolean, otherUI: Boolean, noGlassEffect: Boolean) {
+    fun render(updateDelta: Boolean, otherUI: Boolean, noGlassEffect: Boolean, disableThemeUsesMenu: Boolean = false) {
         val beatRange = getBeatRange()
         val beatRangeStartFloat = beatRange.first.toFloat()
         val beatRangeEndFloat = beatRange.last.toFloat()
         val isGameBoundariesInViews = ViewType.GAME_BOUNDARIES in views
         Gdx.gl.glClearColor(0f, 0f, 0f, 1f)
-        Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT)
+        Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT or GL20.GL_DEPTH_BUFFER_BIT)
 
         batch.begin()
         batch.setColor(1f, 1f, 1f, 1f)
 
-        val themeUsesMenu = main.preferences.getBoolean(PreferenceKeys.THEME_USES_MENU, false)
-        val useGlassEffect = glassEffect.fboSupported && main.preferences.getBoolean(PreferenceKeys.SETTINGS_GLASS_ENTITIES, true)
-        if (!noGlassEffect && themeUsesMenu && useGlassEffect) {
+        val themeUsesMenu = !disableThemeUsesMenu && main.preferences.getBoolean(PreferenceKeys.THEME_USES_MENU, false)
+        val useGlassEffect = !noGlassEffect && glassEffect.fboSupported && main.preferences.getBoolean(PreferenceKeys.SETTINGS_GLASS_ENTITIES, true)
+        if (themeUsesMenu && useGlassEffect) {
             glassEffect.renderBackground()
         }
 
-        this.renderBackground(batch, main.shapeRenderer, main.defaultCamera, true)
+        this.renderBackground(batch, main.shapeRenderer, main.defaultCamera, true, disableThemeUsesMenu)
 
         batch.end()
 
@@ -881,10 +881,6 @@ class Editor(val main: RHRE3Application, stageCamera: OrthographicCamera, attach
             autosaveState.time -= Gdx.graphics.deltaTime
         }
 
-        if (Toolboks.debugMode && Gdx.input.isKeyJustPressed(Input.Keys.J)) {
-            timeUntilAutosave = 0f
-        }
-
         if (!stage.isTyping) {
             if (cameraLeft && !(shift && control)) {
                 camera.position.x -= cameraDelta
@@ -902,6 +898,9 @@ class Editor(val main: RHRE3Application, stageCamera: OrthographicCamera, attach
                 camera.update()
             } else if (Gdx.input.isKeyJustPressed(Input.Keys.END)) {
                 cameraPan = CameraPan(camera.position.x, remix.getLastEntityPoint(), 0.25f, Interpolation.exp10Out)
+                camera.update()
+            } else if (Gdx.input.isKeyJustPressed(Input.Keys.M)) {
+                cameraPan = CameraPan(camera.position.x, remix.musicStartSec, 0.25f, Interpolation.exp10Out)
                 camera.update()
             }
 
@@ -1289,7 +1288,7 @@ class Editor(val main: RHRE3Application, stageCamera: OrthographicCamera, attach
         controlsLabel.text = ctrlBuilder.toString()
     }
 
-    override fun getHoverText(): String {
+    fun getHoverText(): String {
         val output: MutableList<String> = mutableListOf()
         val entity = getEntityOnMouse()
 
@@ -1325,7 +1324,7 @@ class Editor(val main: RHRE3Application, stageCamera: OrthographicCamera, attach
             }
 
             if (ModdingUtils.moddingToolsEnabled && entity is ModelEntity<*>) {
-                val str = GameRegistry.moddingMetadata.currentData.joinToStringFromData(entity.datamodel, entity)
+                val str = SFXDatabase.moddingMetadata.currentData.joinToStringFromData(entity.datamodel, entity)
                 if (str.isNotEmpty()) {
                     output += str
                 }
@@ -1514,8 +1513,8 @@ class Editor(val main: RHRE3Application, stageCamera: OrthographicCamera, attach
                                 datamodel as ResponseModel
                                 if (datamodel.responseIDs.isNotEmpty()) {
                                     val id = datamodel.responseIDs.random()
-                                    val entity = GameRegistry.data.objectMap[id]?.createEntity(remix, null) ?: error(
-                                            "ID $id not found in game registry when making response copy")
+                                    val entity = SFXDatabase.data.objectMap[id]?.createEntity(remix, null) ?: error(
+                                            "ID $id not found in SFX database when making response copy")
 
                                     entity.updateBounds {
                                         entity.bounds.setPosition(it.bounds.x, it.bounds.y)
@@ -1875,6 +1874,22 @@ class Editor(val main: RHRE3Application, stageCamera: OrthographicCamera, attach
         }
 
         return false
+    }
+
+    fun explodeRegion(rect: Rectangle, c: Color) {
+        val color = c.cpy()
+        val expiry = 4f
+        val scale = 0.25f
+        val numX = (rect.width / (scale / 4f)).roundToInt()
+        for (x in 0..numX) {
+            val numY = (rect.height / scale).roundToInt()
+            for (y in 0..numY) {
+                if (((x * numY + y) % 3) > 1) continue
+                particles += Particle(color, rect.x + (x.toFloat() / numX) * rect.width, rect.y + (y.toFloat() / numY) * rect.height,
+                                      MathUtils.random(0.125f, 1f) * MathUtils.randomSign(), MathUtils.random(2.5f, 5f),
+                                      0f, -20f, scale / 4f, scale, expiry)
+            }
+        }
     }
 
     fun explodeEntity(e: ModelEntity<*>, doExplode: Boolean = main.advancedOptions && main.preferences.getBoolean(PreferenceKeys.ADVOPT_EXPLODING_ENTITIES, false)) {

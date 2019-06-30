@@ -7,8 +7,8 @@ import io.github.chrislo27.rhre3.editor.Editor
 import io.github.chrislo27.rhre3.entity.model.IRepitchable
 import io.github.chrislo27.rhre3.entity.model.IStretchable
 import io.github.chrislo27.rhre3.entity.model.MultipartEntity
-import io.github.chrislo27.rhre3.registry.GameRegistry
-import io.github.chrislo27.rhre3.registry.datamodel.impl.Pattern
+import io.github.chrislo27.rhre3.sfxdb.SFXDatabase
+import io.github.chrislo27.rhre3.sfxdb.datamodel.impl.Pattern
 import io.github.chrislo27.rhre3.theme.Theme
 import io.github.chrislo27.rhre3.track.Remix
 
@@ -21,7 +21,7 @@ class PatternEntity(remix: Remix, datamodel: Pattern)
 
     init {
         datamodel.cues.mapTo(internal) { pointer ->
-            GameRegistry.data.objectMap[pointer.id]?.createEntity(remix, pointer)?.apply {
+            SFXDatabase.data.objectMap[pointer.id]?.createEntity(remix, pointer)?.apply {
                 this.updateBounds {
                     this.bounds.x = this@PatternEntity.bounds.x + pointer.beat
                     this.bounds.y = this@PatternEntity.bounds.y + pointer.track
